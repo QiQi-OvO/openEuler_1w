@@ -2,15 +2,15 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
-	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -20,9 +20,7 @@ var (
 	jobId string
 	resultPath string
 )
-const (
-	pathPrefix = "/srv/result/rpmbuild"
-)
+
 
 type Job struct {
 	Suite string `yaml:"suite"`
@@ -39,13 +37,13 @@ type Job struct {
 
 func init(){
 	args := os.Args
-	if len(args) != 3{
+	if len(args) != 2{
 		fmt.Println("第一个参数: yaml文件位置")
-		fmt.Println("第二个参数: repo_addr")
+		// fmt.Println("第二个参数: repo_addr")
 		os.Exit(1)
 	}else {
 		yamlPath = args[1]
-		repoAddr = args[2]
+		// repoAddr = args[2]
 	}
 }
 
@@ -97,18 +95,17 @@ func submit(){
 		fmt.Println("输入字符串需要包含got job id=zx.xxxxxxxx")
 		os.Exit(1)
 	}
-	fmt.Printf("---------submit---------\n %s ---------submit---------\n", string(out))
 	jobId = strings.Split(string(out),"got job id=")[1]
+	if len(jobId) != 0{
+		fmt.Printf("submit successful id=%s\n",jobId)
+	}
 }
 
 
-func getResultPath(){
-	timeStamp := time.Now().Format("2006-01-02")
-	dockerImage := strings.Replace(jobInfo.DockerImage,":","-",-1)
-	dockerImage = fmt.Sprintf("%s-%s",dockerImage,jobInfo.Arch)
-	resultPath = fmt.Sprintf("%s/%s/%s/%s/%s/%s",pathPrefix,timeStamp,jobInfo.TestBox,dockerImage,jobInfo.Arch,jobId)
-	fmt.Println("submit输出目录如下:")
-	fmt.Println(resultPath)
+func debugInfo(){
+	repoItems := strings.Split(repoAddr,"/")
+	repoInfo := repoItems[len(repoItems)-1]
+	fmt.Println(fmt.Sprintf("    %s\n    id=%s\n----------------------------------------------\n",repoInfo,jobId))
 }
 
 
@@ -120,19 +117,68 @@ func createLog (){
 		fmt.Println("日志更新失败", err)
 		os.Exit(1)
 	}
-	defer file.Close()
-	//写入文件时，使用带缓存的 *Writer
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(file)
 	write := bufio.NewWriter(file)
 	repoItems := strings.Split(repoAddr,"/")
 	repoInfo := repoItems[len(repoItems)-1]
 	repoLog := fmt.Sprintf("    %s\n    id=%s\n----------------------------------------------\n",repoInfo,jobId)
-	write.WriteString(repoLog)
-	write.Flush()
+	_, err = write.WriteString(repoLog)
+	if err != nil {
+		fmt.Println("日志更新错误",err)
+		return
+	}
+	err = write.Flush()
+	if err != nil {
+		fmt.Println("日志写入错误",err)
+		return
+	}
 }
 
+func getRepoAddr(addrSlice []string) (err error){
+	if len(addrSlice) <=2{
+		repoAddr = addrSlice[0]
+		err = nil
+	}else{
+		err = errors.New("仓库格式错误，不应该携带一个以上的'&'")
+	}
+	return
+}
 func main() {
-	updateYaml()
-	// submit()
-	getResultPath()
-	createLog()
+	canExit := true
+	exitSignal := make(chan os.Signal)
+	signal.Notify(exitSignal, os.Interrupt)
+	waitExit(exitSignal,canExit)
+	for{
+		fmt.Printf("请输入 repo_addr: ")
+		_, err := fmt.Scan(&repoAddr)
+		aliyunRepo := strings.Split(repoAddr,"&")
+		err = getRepoAddr(aliyunRepo)
+		for err != nil{
+			fmt.Printf("输入错误:%s\n",err.Error())
+			fmt.Printf("请重新输入 repo_addr: ")
+			_, err = fmt.Scan(&repoAddr)
+			aliyunRepo = strings.Split(repoAddr,"&")
+			err = getRepoAddr(aliyunRepo)
+		}
+		canExit = false
+		updateYaml()
+		submit()
+		debugInfo()
+		createLog()
+		canExit = true
+	}
+}
+
+func waitExit(exit chan os.Signal,canExit bool) {
+	go func() {
+		<-exit
+		for canExit{
+			os.Exit(0)
+		}
+	}()
 }
