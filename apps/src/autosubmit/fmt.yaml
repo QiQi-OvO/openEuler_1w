@@ -1,7 +1,7 @@
 suite: rpmbuild
 category: functional
 rpmbuild: 
-repo_addr: /test_addr
+repo_addr: "112112"
 custom_repo_name: compatible/7
 docker_image: openeuler:20.03-LTS-SP1
 arch: x86_64
