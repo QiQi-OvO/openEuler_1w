@@ -1,0 +1,15 @@
+suite: rpmbuild
+category: functional
+rpmbuild: 
+repo_addr: /test_addr
+custom_repo_name: compatible/7
+docker_image: openeuler:20.03-LTS-SP1
+arch: x86_64
+mount_repo_addr:
+    - https://repo.oepkgs.net/openEuler/rpm/openEuler-20.03-LTS-SP1/compatible/c7/aarch64
+    - https://api.compass-ci.openeuler.org:20018/rpm/testing/openeuler-20.03-LTS-SP1/compatible/c7/aarch64
+mount_repo_name:
+    - compatible-7
+    - compatible-test-7
+testbox: dc-8g
+
